@@ -25,29 +25,30 @@ class DependencyCollector
   end
 
   def add spec
-    tag = nil
-    spec, tag = spec.shift if spec.is_a? Hash
-
-    dep = case spec
-    when :x11, :libpng
-      X11Dependency.new(tag)
-    when Symbol
-      raise "Unsupported special dependency #{spec}"
-    when String
-      if LANGUAGE_MODULES.include? tag
-        LanguageModuleDependency.new(tag, spec)
+    case spec
+    when :x11        then @external_deps << X11Dependency.new
+    when String      then @deps << Dependency.new(spec)
+    when Formula     then @deps << Dependency.new(spec.name)
+    when Dependency  then @deps << spec
+    when Requirement then @external_deps << spec
+    when Hash
+      key, value = spec.shift
+      if key == :x11
+        @external_deps << X11Dependency.new(value)
       else
-        Dependency.new(spec, tag)
+        case value
+        when Array
+          @deps << Dependency.new(key, value)
+        when *LANGUAGE_MODULES
+          @external_deps << LanguageModuleDependency.new(value, key)
+        else
+          # :optional, :recommended, :build, :universal and "32bit" are predefined
+          @deps << Dependency.new(key, [value])
+        end
       end
-    when Formula
-      Dependency.new(spec.name, tag)
-    when Dependency, Requirement
-      spec
     else
       raise "Unsupported type #{spec.class} for #{spec}"
     end
-
-    (dep.is_a?(Requirement) ? @external_deps : @deps) << dep
   end
 
 end
@@ -67,11 +68,8 @@ class Dependency
 
   def initialize name, tags=nil
     @name = name
-    @tags = case tags
-      when Array then tags.each {|s| s.to_s}
-      when nil then []
-      else [tags.to_s]
-    end
+    tags = [] if tags == nil
+    @tags = tags.each {|s| s.to_s}
   end
 
   def to_s
